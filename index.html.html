@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Simulator</title>
+<style>
+  /* ===== Цвета редкости (как в CS) ===== */
+  :root{
+    --bg:#07050d; --panel:#120c1f; --line:#2d1d4d; --text:#ece6f7; --muted:#8f84a8; --accent:#a855f7;
+    --blue:#4b69ff; --purple:#8847ff; --pink:#d32ce6; --red:#eb4b4b; --gold:#e4ae39;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:radial-gradient(900px 500px at 15% -10%,#2a1054 0,transparent 60%),radial-gradient(800px 500px at 100% 100%,#1c0a38 0,transparent 55%),var(--bg);background-attachment:fixed;color:var(--text);font-family:system-ui,Segoe UI,Arial,sans-serif;min-height:100vh}
+  button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:10px 18px;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;font-weight:700}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.ghost{background:var(--panel);color:var(--text);border:1px solid var(--line)}
+  button.ghost.active{border-color:var(--accent);color:var(--accent)}
+
+  header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 24px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .logo{font-weight:800;font-size:20px;color:var(--accent)}
+  nav{display:flex;gap:8px;flex-wrap:wrap}
+  .balance{display:flex;gap:10px;align-items:center;font-weight:700}
+  main{max-width:1100px;margin:0 auto;padding:24px}
+  .view{display:none}.view.active{display:block}
+  h2{margin-bottom:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+
+  /* ===== Карточка предмета (цвет рамки = редкость) ===== */
+  .item{background:var(--panel);border:1px solid var(--line);border-bottom:4px solid var(--c);border-radius:8px;padding:10px;text-align:center;cursor:default;position:relative}
+  .item .pic{height:70px;border-radius:6px;display:grid;place-items:center;font-size:34px;background:linear-gradient(160deg,color-mix(in srgb,var(--c) 35%,#000),#0c0716)}
+  .item .name{font-size:13px;margin:8px 0 2px}
+  .item .price{color:#d8b4fe;font-weight:700;font-size:13px}
+  .item .chance{color:var(--muted);font-size:11px}
+  .item.selectable{cursor:pointer}
+  .item.selected{outline:2px solid var(--accent);background:#24173d}
+  .item button{margin-top:6px;padding:5px 10px;font-size:12px}
+
+  /* ===== Магазин ===== */
+  .cases{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:20px}
+  .case-card{--glow:#a855f7;background:radial-gradient(circle at 50% 0%,color-mix(in srgb,var(--glow) 30%,transparent),transparent 65%),var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 16px;text-align:center;cursor:pointer;transition:.25s}
+  .case-card:hover{transform:translateY(-6px);border-color:var(--glow);box-shadow:0 10px 40px color-mix(in srgb,var(--glow) 45%,transparent)}
+  .case-card .box{font-size:72px;filter:drop-shadow(0 0 18px var(--glow));animation:float 3s ease-in-out infinite}
+  .cprice{color:#d8b4fe;font-weight:800;font-size:18px;margin-top:6px}
+  .cinfo{color:var(--muted);font-size:12px}
+  @keyframes float{50%{transform:translateY(-8px)}}
+
+  /* ===== Рулетка ===== */
+  .roulette{position:relative;overflow:hidden;background:#06040b;border:1px solid var(--line);border-radius:10px;padding:14px 0;margin:16px 0}
+  .roulette::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:3px;background:var(--accent);box-shadow:0 0 12px var(--accent);z-index:2}
+  .track{display:flex;will-change:transform}
+  .r-item{flex:0 0 130px;margin:0 5px}  /* ширина шага = 130 + 10 = 140px (см. ITEM_W в JS) */
+  .center{text-align:center}
+  .result{min-height:70px;margin-top:10px}
+
+  /* ===== Апгрейд ===== */
+  .up-layout{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.up-layout{grid-template-columns:1fr}.wheel-wrap{order:-1}}
+  .box-panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;max-height:480px;overflow:auto}
+  .wheel-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .wheel{position:relative;width:240px;height:240px;border-radius:50%;background:conic-gradient(#4ade80 0 0%,#2a1b45 0% 100%)}
+  .wheel::before{content:"";position:absolute;inset:18px;border-radius:50%;background:var(--bg)}
+  .wheel-text{position:absolute;inset:0;display:grid;place-items:center;text-align:center;font-weight:800;font-size:20px;z-index:1}
+  .pointer{position:absolute;inset:0;z-index:2}              /* вращается целиком вокруг центра */
+  .pointer::before{content:"";position:absolute;left:50%;top:-6px;width:4px;height:36px;margin-left:-2px;background:#fff;border-radius:2px;box-shadow:0 0 8px #fff}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#24173d;border:1px solid var(--accent);padding:10px 20px;border-radius:8px;opacity:0;transition:.3s;pointer-events:none}
+  .toast.show{opacity:1}
+  .empty{color:var(--muted)}
+  header{background:rgba(18,12,31,.85);backdrop-filter:blur(8px);position:sticky;top:0;z-index:5}
+  .logo{text-shadow:0 0 14px var(--accent);letter-spacing:2px}
+  h2{background:linear-gradient(90deg,#fff,#c084fc);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .item{transition:.2s}.item:hover{box-shadow:0 0 18px color-mix(in srgb,var(--c) 55%,transparent)}
+  .roulette{box-shadow:inset 0 0 40px rgba(168,85,247,.15)}
+  .wheel-wrap{position:relative;align-self:start}
+  .box-panel .grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+  /* Сова */
+  .owl{position:relative;width:150px;height:140px;perspective:400px;margin:0 auto}
+  .owl-body{position:absolute;left:35px;top:46px;width:80px}
+  .owl-head{position:absolute;left:30px;top:0;width:90px;z-index:2;transform-origin:50% 55%}
+  .owl-head.turn{animation:turnHead 3.6s ease-in-out}   /* голова делает полный оборот на 360° */
+  @keyframes turnHead{to{transform:rotateY(360deg)}}
+  /* Холст для салюта поверх блока колеса */
+  #fx{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+  /* Выбор количества кейсов и блок после дропа */
+  .count-bar{display:flex;gap:8px;justify-content:center;align-items:center;margin:12px 0}
+  .count-bar::before{content:"Открыть кейсов:";color:var(--muted);margin-right:6px}
+  button.ghost.cnt{width:44px;height:44px;border-radius:50%;padding:0;font-size:18px;font-weight:800}
+  button.ghost.cnt.active{background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;border-color:transparent;box-shadow:0 0 14px rgba(168,85,247,.6)}
+  .drops{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+  .after{display:flex;gap:12px;max-width:520px;margin:16px auto 0}
+  .after button{flex:1}
+  .multi .roulette{margin:8px 0;padding:8px 0}
+  .multi .item .pic{height:46px}.multi .item .name{font-size:11px}
+  .stats{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-bottom:20px}
+  @media(max-width:700px){.stats{grid-template-columns:1fr}}
+  .stat{background:radial-gradient(circle at 50% 0,rgba(168,85,247,.15),transparent 70%),var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+  .stat.best{border-color:var(--c);box-shadow:0 0 22px color-mix(in srgb,var(--c) 35%,transparent)}
+  .stat-num{font-size:34px;font-weight:800;color:#d8b4fe}
+  .stat-label{color:var(--muted);font-size:13px}
+  .stat-pic{font-size:44px}.stat-name{font-weight:700}
+  .tick{position:absolute;transform:translate(-50%,-50%);font-size:10px;color:var(--muted);z-index:1;pointer-events:none;white-space:nowrap}
+  .tick.big{color:#d8b4fe;font-weight:800;font-size:12px}
+  .wheel{margin:10px 0}
+  .chance-bar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px}
+  .chance-bar button{padding:5px 10px;font-size:12px}
+  /* Колесо с совой — сверху по центру на всю ширину, ниже рядом «Ваши предметы» и «Цель» */
+  .wheel-wrap{grid-column:1/-1;order:-1;justify-self:center;width:340px;max-width:100%}
+  .item.locked{opacity:.35;cursor:not-allowed}.item.locked:hover{box-shadow:none}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🔮 NIGHT CASES</div>
+  <nav>
+    <button class="ghost" data-view="shop">Магазин</button>
+    <button class="ghost" data-view="upgrade">Апгрейд</button>
+    <button class="ghost" data-view="inventory">Инвентарь</button>
+  </nav>
+  <div class="balance">💰 <span id="balance">$0</span> <button id="topup">Пополнить +$500</button></div>
+</header>
+
+<main>
+  <!-- 1. Магазин кейсов -->
+  <section id="view-shop" class="view">
+    <h2>Магазин кейсов</h2>
+    <div class="cases" id="shopList"></div>
+  </section>
+
+  <!-- 2. Открытие кейса -->
+  <section id="view-case" class="view">
+    <button class="ghost" data-view="shop">← Назад</button>
+    <h2 class="center" id="caseTitle"></h2>
+    <div id="roulettes"></div>
+    <div class="count-bar" id="countBar"></div>
+    <div class="center"><button id="openBtn"></button></div>
+    <div class="result center" id="caseResult"></div>
+    <h3 style="margin:20px 0 10px">Содержимое кейса</h3>
+    <div class="grid" id="caseContents"></div>
+  </section>
+
+  <!-- 3. Апгрейд -->
+  <section id="view-upgrade" class="view">
+    <h2>Апгрейд предметов</h2>
+    <div class="up-layout">
+      <div class="box-panel"><h3>Ваши предметы</h3><p class="empty" id="upMyHint"></p><div class="grid" id="upMy"></div></div>
+      <div class="box-panel"><h3>Цель</h3><div class="chance-bar" id="chanceBar"></div><div class="grid" id="upTargets"></div></div>
+      <div class="wheel-wrap" id="wheelWrap">
+        <!-- Сова: голова и тело — два отдельных SVG, чтобы голова крутилась отдельно -->
+        <div class="owl" id="owl">
+          <svg class="owl-body" viewBox="0 0 100 70"><ellipse cx="50" cy="38" rx="34" ry="30" fill="#5b2a9e"/><ellipse cx="50" cy="42" rx="20" ry="22" fill="#a78bfa" opacity=".6"/><path d="M20 30Q8 50 24 64Q28 48 26 34ZM80 30Q92 50 76 64Q72 48 74 34Z" fill="#4c1d95"/><path d="M38 66l-4 6M50 68v7M62 66l4 6" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/></svg>
+          <svg class="owl-head" id="owlHead" viewBox="0 0 100 80"><path d="M14 30L20 4L40 18ZM86 30L80 4L60 18Z" fill="#5b2a9e"/><ellipse cx="50" cy="44" rx="40" ry="34" fill="#7c3aed"/><circle cx="33" cy="42" r="14" fill="#f3e8ff"/><circle cx="67" cy="42" r="14" fill="#f3e8ff"/><circle cx="33" cy="42" r="8" fill="#fbbf24"/><circle cx="67" cy="42" r="8" fill="#fbbf24"/><circle cx="33" cy="42" r="4" fill="#111"/><circle cx="67" cy="42" r="4" fill="#111"/><path d="M44 54L56 54L50 66Z" fill="#f59e0b"/></svg>
+        </div>
+        <div class="wheel" id="wheel"><div class="wheel-text" id="wheelText">Шанс: 0%</div><div class="pointer" id="pointer"></div></div>
+        <div class="center" id="upInfo">Выберите предметы и цель</div>
+        <button id="upgradeBtn" disabled>Апгрейд</button>
+        <canvas id="fx"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Инвентарь -->
+  <section id="view-inventory" class="view">
+    <h2>Инвентарь <button id="sellAll" class="ghost" style="margin-left:12px">Продать всё</button></h2>
+    <div class="stats" id="stats"></div>
+    <p class="empty" id="invEmpty">Пока пусто — откройте кейс!</p>
+    <div class="grid" id="invList"></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* =====================================================================
+   1. ДАННЫЕ: предметы и кейс
+   chance — шанс выпадения в %, сумма по кейсу = 100
+   ===================================================================== */
+const COLORS = {blue:'#4b69ff', purple:'#8847ff', pink:'#d32ce6', red:'#eb4b4b', gold:'#e4ae39'};
+
+/* Каталог ВСЕХ предметов (из него берутся и дропы кейсов, и цели апгрейда) */
+const ITEMS = [
+  {id:'mp9',     name:'MP9 | Ночная тень',          price:0.6,  rarity:'blue',   icon:'🔫'},
+  {id:'nova',    name:'Nova | Туман',               price:0.9,  rarity:'blue',   icon:'🔫'},
+  {id:'fiveseven',name:'Five-SeveN | Тень',         price:1,    rarity:'blue',   icon:'🔫'},
+  {id:'p250',    name:'P250 | Нептун',              price:1.2,  rarity:'blue',   icon:'🔫'},
+  {id:'sg',      name:'SG 553 | Полночь',           price:1.6,  rarity:'blue',   icon:'🔫'},
+  {id:'mac10',   name:'MAC-10 | Сумрак',            price:1.8,  rarity:'blue',   icon:'🔫'},
+  {id:'ump',     name:'UMP-45 | Лунный свет',       price:2,    rarity:'blue',   icon:'🔫'},
+  {id:'galil',   name:'Galil AR | Орхидея',         price:3.5,  rarity:'purple', icon:'🔫'},
+  {id:'ak',      name:'AK-47 | Неон',               price:4,    rarity:'purple', icon:'🔫'},
+  {id:'p90',     name:'P90 | Нектар',               price:5,    rarity:'purple', icon:'🔫'},
+  {id:'deagle',  name:'Desert Eagle | Аметист',     price:6,    rarity:'purple', icon:'🔫'},
+  {id:'famas',   name:'FAMAS | Аметистовый дым',    price:7.5,  rarity:'purple', icon:'🔫'},
+  {id:'m4',      name:'M4A4 | Кибер',               price:12,   rarity:'pink',   icon:'🔫'},
+  {id:'usp',     name:'USP-S | Ультрафиолет',       price:15,   rarity:'pink',   icon:'🔫'},
+  {id:'glock',   name:'Glock-18 | Вайолет',         price:18,   rarity:'pink',   icon:'🔫'},
+  {id:'ssg',     name:'SSG 08 | Сумеречный',        price:22,   rarity:'pink',   icon:'🎯'},
+  {id:'m4s',     name:'M4A1-S | Магия',             price:28,   rarity:'pink',   icon:'🔫'},
+  {id:'awp',     name:'AWP | Дракон',               price:45,   rarity:'red',    icon:'🎯'},
+  {id:'akblood', name:'AK-47 | Багровая ночь',      price:70,   rarity:'red',    icon:'🔫'},
+  {id:'awpvoid', name:'AWP | Бездна',               price:95,   rarity:'red',    icon:'🎯'},
+  {id:'akfire',  name:'AK-47 | Огненная ночь',      price:110,  rarity:'red',    icon:'🔫'},
+  {id:'m4howl',  name:'M4A4 | Вой',                 price:130,  rarity:'red',    icon:'🔫'},
+  {id:'butter',  name:'Нож-бабочка | Фейд',         price:150,  rarity:'gold',   icon:'🗡️'},
+  {id:'daggers', name:'Тычковые ножи | Орхидея',    price:180,  rarity:'gold',   icon:'🔪'},
+  {id:'flip',    name:'Флип-нож | Мрак',            price:220,  rarity:'gold',   icon:'⚔️'},
+  {id:'huntsman',name:'Охотничий нож | Космос',     price:260,  rarity:'gold',   icon:'🔪'},
+  {id:'bayonet', name:'Штык-нож | Сумерки',         price:300,  rarity:'gold',   icon:'🗡️'},
+  {id:'gloves',  name:'Перчатки | Пандора',         price:450,  rarity:'gold',   icon:'🧤'},
+  {id:'karam',   name:'Karambit | Градиент',        price:600,  rarity:'gold',   icon:'🗡️'},
+  {id:'m9',      name:'M9 Bayonet | Аметист',       price:750,  rarity:'gold',   icon:'⚔️'},
+  {id:'talon',   name:'Коготь | Ультрафиолет',      price:900,  rarity:'gold',   icon:'🗡️'},
+  {id:'sgloves', name:'Спорт. перчатки | Бездна',   price:1200, rarity:'gold',   icon:'🧤'},
+];
+
+/* Кейсы. drops = какие предметы выпадают и с каким шансом (сумма в каждом кейсе = 100%).
+   Чтобы добавить свой кейс — просто скопируйте любой блок и поменяйте значения. */
+const CASES = [
+  {id:'start',   name:'Стартовый',       price:2,   icon:'📦', glow:'#4b69ff', drops:[{id:'mp9',chance:30},{id:'nova',chance:25},{id:'fiveseven',chance:20},{id:'p250',chance:12},{id:'ump',chance:7},{id:'galil',chance:4},{id:'ak',chance:1.5},{id:'deagle',chance:0.5}]},
+  {id:'night',   name:'Фиолетовая ночь', price:5,   icon:'🔮', glow:'#8847ff', drops:[{id:'p250',chance:25},{id:'sg',chance:20},{id:'mac10',chance:15},{id:'galil',chance:15},{id:'ak',chance:10},{id:'p90',chance:7},{id:'deagle',chance:4},{id:'famas',chance:2.5},{id:'m4',chance:1},{id:'awp',chance:0.5}]},
+  {id:'neon',    name:'Неоновый',        price:10,  icon:'🎁', glow:'#d32ce6', drops:[{id:'p250',chance:40},{id:'ak',chance:26},{id:'famas',chance:12},{id:'m4',chance:10},{id:'usp',chance:5},{id:'glock',chance:3},{id:'awp',chance:2},{id:'daggers',chance:1.4},{id:'butter',chance:0.5},{id:'karam',chance:0.1}]},
+  {id:'pandora', name:'Пандора',         price:50,  icon:'👁️', glow:'#eb4b4b', drops:[{id:'m4',chance:25},{id:'usp',chance:22},{id:'glock',chance:14},{id:'ssg',chance:11},{id:'m4s',chance:10},{id:'awp',chance:8},{id:'akblood',chance:4},{id:'awpvoid',chance:2.5},{id:'akfire',chance:1.5},{id:'daggers',chance:1.2},{id:'flip',chance:0.6},{id:'huntsman',chance:0.2}]},
+  {id:'emperor', name:'Император',       price:200, icon:'👑', glow:'#e4ae39', drops:[{id:'awp',chance:25},{id:'akblood',chance:22},{id:'awpvoid',chance:15},{id:'akfire',chance:14},{id:'m4howl',chance:10},{id:'daggers',chance:5},{id:'flip',chance:3.5},{id:'huntsman',chance:2.5},{id:'bayonet',chance:1.5},{id:'gloves',chance:0.8},{id:'karam',chance:0.4},{id:'m9',chance:0.3}]},
+  {id:'abyss',   name:'Бездна',          price:300, icon:'🌌', glow:'#7c3aed', drops:[{id:'awpvoid',chance:25},{id:'akfire',chance:22},{id:'m4howl',chance:18},{id:'huntsman',chance:12},{id:'flip',chance:9},{id:'bayonet',chance:6},{id:'gloves',chance:4},{id:'karam',chance:2},{id:'m9',chance:1.2},{id:'talon',chance:0.6},{id:'sgloves',chance:0.2}]},
+];
+const getItem = id => ITEMS.find(i => i.id === id);
+/* Предметы кейса вместе с их шансами (для рулетки и списка содержимого) */
+const caseItems = c => c.drops.map(d => ({...getItem(d.id), chance:d.chance}));
+let CASE = null;   // текущий открытый кейс (заполняется в openCasePage)
+
+/* =====================================================================
+   2. СОСТОЯНИЕ (баланс + инвентарь) и сохранение в LocalStorage
+   inventory: [{uid, itemId}] — uid нужен, чтобы отличать одинаковые предметы
+   ===================================================================== */
+const STORAGE_KEY = 'case-sim-v1';
+let state = loadState();
+
+function loadState(){
+  try { const s = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (s){ s.stats = s.stats || {opened:0, upgrades:0, wins:0, best:null}; return s; } } catch(e){}
+  return {balance:1000, inventory:[], stats:{opened:0, upgrades:0, wins:0, best:null}};            // стартовое состояние
+}
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+const round2 = n => Math.round(n * 100) / 100;     // защита от ошибок float (0.1+0.2)
+const money  = n => '$' + n.toFixed(2);
+const uid    = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+function changeBalance(delta){ state.balance = round2(state.balance + delta); saveState(); renderBalance(); }
+function addToInventory(itemId){ state.inventory.push({uid:uid(), itemId}); saveState(); }
+
+/* Рекорд: запоминаем самый дорогой предмет, который когда-либо выпал (из кейса или апгрейда).
+   Хранится навсегда — даже если предмет потом продали или сожгли. */
+function recordBest(itemId){
+  const cur = state.stats.best && getItem(state.stats.best);
+  if (!cur || getItem(itemId).price > cur.price) state.stats.best = itemId;
+}
+
+function toast(msg){
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+const $ = id => document.getElementById(id);
+
+/* ===== Общий шаблон карточки предмета ===== */
+function itemCard(item, extra = ''){
+  return `<div class="item" style="--c:${COLORS[item.rarity]}">
+    <div class="pic">${item.icon}</div>
+    <div class="name">${item.name}</div>
+    <div class="price">${money(item.price)}</div>${extra}</div>`;
+}
+
+/* =====================================================================
+   3. НАВИГАЦИЯ ПО ВКЛАДКАМ
+   ===================================================================== */
+function showView(name){
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  if (name === 'shop') renderShop();
+  if (name === 'inventory') renderInventory();
+  if (name === 'upgrade') renderUpgrade();
+}
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => showView(b.dataset.view));
+
+function renderBalance(){ $('balance').textContent = money(state.balance); }
+$('topup').onclick = () => { changeBalance(500); toast('+$500 (тестовое пополнение)'); };
+
+/* =====================================================================
+   4. МАГАЗИН
+   ===================================================================== */
+/* SVG-иконка кейса: тёмный объёмный ящик (изометрия) со светящимися гранями цвета кейса
+   и эмблемой на крышке. Цвет берём из c.glow, эмблему — из c.icon. */
+function caseIconSvg(c, size = 110){
+  const g = c.glow;
+  return `<svg width="${size}" height="${Math.round(size * 0.92)}" viewBox="0 0 120 110" style="overflow:visible">
+    <polygon points="8,32 60,56 60,104 8,80" fill="#150d26" stroke="${g}" stroke-width="2" stroke-linejoin="round"/>
+    <polygon points="112,32 60,56 60,104 112,80" fill="#0d0818" stroke="${g}" stroke-width="2" stroke-linejoin="round"/>
+    <polygon points="60,8 112,32 60,56 8,32" fill="#241838" stroke="${g}" stroke-width="2" stroke-linejoin="round"/>
+    <polygon points="8,52 60,76 60,86 8,62" fill="${g}" opacity=".85"/>
+    <polygon points="112,52 60,76 60,86 112,62" fill="${g}" opacity=".55"/>
+    <ellipse cx="60" cy="32" rx="22" ry="11" fill="${g}" opacity=".25"/>
+    <text x="60" y="39" font-size="20" text-anchor="middle">${c.icon}</text></svg>`;
+}
+
+function renderShop(){
+  $('shopList').innerHTML = CASES.map(c => `<div class="case-card" data-case="${c.id}" style="--glow:${c.glow}">
+    <div class="box">${caseIconSvg(c, 110)}</div><h3>${c.name}</h3>
+    <p class="cprice">${money(c.price)}</p>
+    <p class="cinfo">до ${money(Math.max(...c.drops.map(d => getItem(d.id).price)))}</p></div>`).join('');
+  document.querySelectorAll('[data-case]').forEach(el => el.onclick = () => openCasePage(el.dataset.case));
+}
+
+/* =====================================================================
+   5. ОТКРЫТИЕ КЕЙСА
+   ===================================================================== */
+const ITEM_W = 140;      // ширина одного предмета в ленте + отступы (см. .r-item в CSS)
+const STRIP_LEN = 60;    // сколько предметов в ленте
+const WIN_INDEX = 50;    // на какой позиции ленты лежит выигрышный предмет
+let isSpinning = false;  // защита от повторного нажатия во время анимации
+
+let openCount = 1;   // сколько кейсов открываем одновременно (1–5)
+
+function openCasePage(caseId){
+  const c = CASES.find(x => x.id === caseId);
+  CASE = {...c, items: caseItems(c)};
+  $('caseTitle').innerHTML = caseIconSvg(CASE, 70) + '<br>' + CASE.name;
+  $('caseResult').innerHTML = '';
+  $('caseContents').innerHTML = CASE.items.map(i => itemCard(i, `<div class="chance">${i.chance}%</div>`)).join('');
+  openCount = 1;
+  renderCountBar(); renderRoulettes(); updateOpenBtn();
+  showView('case');
+}
+
+/* Кнопки-цифры 1…5: выбирают, сколько кейсов открыть за раз */
+function renderCountBar(){
+  $('countBar').innerHTML = [1, 2, 3, 4, 5].map(n =>
+    `<button class="ghost cnt ${n === openCount ? 'active' : ''}" data-n="${n}">${n}</button>`).join('');
+  document.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
+    if (isSpinning) return;
+    openCount = +b.dataset.n;
+    renderCountBar(); renderRoulettes(); updateOpenBtn();
+  });
+}
+function updateOpenBtn(){
+  $('openBtn').textContent = openCount > 1
+    ? `Открыть ×${openCount} за ${money(round2(CASE.price * openCount))}`
+    : `Открыть за ${money(CASE.price)}`;
+}
+
+/* Рисуем столько рулеток, сколько кейсов выбрано (до открытия — с «превью»-лентой) */
+function renderRoulettes(){
+  $('roulettes').className = openCount > 1 ? 'multi' : '';
+  $('roulettes').innerHTML = Array.from({length: openCount}, () => `<div class="roulette"><div class="track"></div></div>`).join('');
+  document.querySelectorAll('#roulettes .track').forEach(t => {
+    t.innerHTML = Array.from({length: 12}, () => `<div class="r-item">${itemCard(pickItemByChance(CASE.items))}</div>`).join('');
+  });
+}
+
+/* Выбор предмета по шансам (метод «взвешенного случайного»):
+   Представьте линейку длиной 100. Каждому предмету отдаём отрезок длиной = его шанс:
+   [0..44) синий, [44..72) фиолетовый, и т.д. Бросаем случайную точку r в диапазоне 0..100
+   и смотрим, в чей отрезок она попала — этот предмет и выпал. */
+function pickItemByChance(items){
+  const r = Math.random() * 100;
+  let acc = 0;                       // накопленная сумма шансов
+  for (const item of items){
+    acc += item.chance;
+    if (r < acc) return item;
+  }
+  return items[items.length - 1];    // запасной вариант на случай погрешности float
+}
+
+/* Строим ленту: случайные предметы (тоже по шансам), а на WIN_INDEX кладём победителя */
+function buildStrip(track, winner){
+  const strip = [];
+  for (let i = 0; i < STRIP_LEN; i++) strip.push(i === WIN_INDEX ? winner : pickItemByChance(CASE.items));
+  track.innerHTML = strip.map(it => `<div class="r-item">${itemCard(it)}</div>`).join('');
+}
+
+/* Анимация рулетки.
+   1) сбрасываем ленту в начало без анимации;
+   2) считаем, на сколько пикселей надо сдвинуть ленту, чтобы центр победителя оказался под жёлтой линией;
+   3) включаем CSS-transition с кривой cubic-bezier — она быстро стартует и плавно тормозит;
+   4) добавляем случайный сдвиг ±50px, чтобы линия останавливалась в разных местах карточки. */
+function rollRoulette(track){
+  track.style.transition = 'none';
+  track.style.transform = 'translateX(0)';
+  void track.offsetWidth;                                // «пинок» браузеру: применить сброс до новой анимации
+
+  const viewport = track.parentElement.clientWidth;
+  const jitter = Math.random() * 100 - 50;
+  const distance = WIN_INDEX * ITEM_W + ITEM_W / 2 - viewport / 2 + jitter;
+
+  track.style.transition = 'transform 6s cubic-bezier(0.12, 0.8, 0.18, 1)';
+  track.style.transform = `translateX(${-distance}px)`;
+  return new Promise(resolve => setTimeout(resolve, 6100));  // ждём окончания анимации
+}
+
+/* Открытие N кейсов сразу: у каждой рулетки свой победитель, все крутятся одновременно
+   (Promise.all ждёт, пока закончатся ВСЕ анимации). Деньги списываются за все кейсы разом. */
+async function openCase(){
+  if (isSpinning) return;
+  const total = round2(CASE.price * openCount);
+  if (state.balance < total){ toast('Недостаточно средств — пополните баланс'); return; }
+
+  isSpinning = true; $('caseResult').innerHTML = '';
+  $('openBtn').disabled = true; document.querySelectorAll('.cnt').forEach(b => b.disabled = true);
+  changeBalance(-total);
+
+  const tracks = [...document.querySelectorAll('#roulettes .track')];
+  const winners = tracks.map(() => pickItemByChance(CASE.items));
+  tracks.forEach((t, i) => buildStrip(t, winners[i]));
+  await Promise.all(tracks.map(t => rollRoulette(t)));
+
+  // Все выпавшие предметы попадают в инвентарь; запоминаем их uid, чтобы можно было продать сразу
+  const uids = winners.map(w => { const e = {uid:uid(), itemId:w.id}; state.inventory.push(e); return e.uid; });
+  state.stats.opened += winners.length;           // счётчик открытых кейсов
+  winners.forEach(w => recordBest(w.id));
+  saveState();
+  showDropResult(winners, uids);
+
+  isSpinning = false;
+  $('openBtn').disabled = false; document.querySelectorAll('.cnt').forEach(b => b.disabled = false);
+}
+
+/* Результат: слева «Продать (цена)», справа «Ещё раз» */
+function showDropResult(winners, uids){
+  const total = round2(winners.reduce((s, w) => s + w.price, 0));
+  $('caseResult').innerHTML = `<h3>Вам выпало:</h3>
+    <div class="drops">${winners.map(w => `<div style="width:150px">${itemCard(w)}</div>`).join('')}</div>
+    <div class="after">
+      <button class="ghost" id="sellDrop">Продать ${winners.length > 1 ? 'всё' : 'скин'} (${money(total)})</button>
+      <button id="againBtn">Ещё раз</button>
+    </div>`;
+  $('sellDrop').onclick = () => {
+    let sum = 0;                                   // продаём только те предметы, что ещё лежат в инвентаре
+    state.inventory = state.inventory.filter(e => {
+      if (!uids.includes(e.uid)) return true;
+      sum += getItem(e.itemId).price; return false;
+    });
+    changeBalance(sum);
+    $('sellDrop').disabled = true;
+    $('sellDrop').textContent = sum ? 'Продано за ' + money(round2(sum)) : 'Уже продано';
+  };
+  $('againBtn').onclick = openCase;
+}
+$('openBtn').onclick = openCase;
+
+/* =====================================================================
+   6. ИНВЕНТАРЬ
+   ===================================================================== */
+function renderStats(){
+  const st = state.stats, best = st.best && getItem(st.best);
+  $('stats').innerHTML = `
+    <div class="stat best" style="--c:${best ? COLORS[best.rarity] : 'var(--line)'}">
+      <div class="stat-label">🏆 Лучший дроп</div>
+      ${best ? `<div class="stat-pic">${best.icon}</div><div class="stat-name">${best.name}</div><div class="price" style="color:#d8b4fe;font-weight:700">${money(best.price)}</div>`
+             : '<div class="empty" style="margin-top:18px">Пока ничего не выпало</div>'}
+    </div>
+    <div class="stat"><div class="stat-num">${st.opened}</div><div class="stat-label">📦 Кейсов открыто</div></div>
+    <div class="stat"><div class="stat-num">${st.upgrades}</div><div class="stat-label">⚡ Апгрейдов</div><div class="cinfo">успешных: ${st.wins}</div></div>`;
+}
+
+function renderInventory(){
+  renderStats();
+  $('invEmpty').style.display = state.inventory.length ? 'none' : 'block';
+  $('sellAll').disabled = !state.inventory.length;
+  $('invList').innerHTML = state.inventory.map(entry => {
+    const it = getItem(entry.itemId);
+    return itemCard(it, `<button data-sell="${entry.uid}">Продать</button>`);
+  }).join('');
+  document.querySelectorAll('[data-sell]').forEach(b => b.onclick = () => sellItem(b.dataset.sell));
+}
+
+function sellItem(entryUid){
+  const idx = state.inventory.findIndex(e => e.uid === entryUid);
+  if (idx === -1) return;
+  const item = getItem(state.inventory[idx].itemId);
+  state.inventory.splice(idx, 1);                // убираем из инвентаря
+  changeBalance(item.price);                     // возвращаем деньги (сохранение внутри)
+  renderInventory();
+}
+$('sellAll').onclick = () => {
+  const total = state.inventory.reduce((s, e) => s + getItem(e.itemId).price, 0);
+  state.inventory = []; changeBalance(total); renderInventory(); toast('Продано на ' + money(total));
+};
+
+/* =====================================================================
+   7. АПГРЕЙД
+   ===================================================================== */
+let selectedUids = new Set();   // выбранные предметы игрока
+let targetId = null;            // выбранная цель
+let isUpgrading = false;
+const CHANCE_LEVELS = [10, 25, 50, 75, 90];   // кнопки быстрого выбора шанса
+let chanceFilter = null;                      // null = показывать все скины
+
+/* К какой кнопке (10/25/50/75/90) ближе всего данный шанс — так скин попадает в свою группу */
+const nearestLevel = ch => CHANCE_LEVELS.reduce((best, l) => Math.abs(l - ch) < Math.abs(best - ch) ? l : best);
+
+/* Формула шанса: (стоимость вещей игрока / стоимость цели) * 100, максимум 100% */
+function calculateUpgradeChance(){
+  if (!targetId || !selectedUids.size) return 0;
+  const myValue = state.inventory.filter(e => selectedUids.has(e.uid))
+                       .reduce((s, e) => s + getItem(e.itemId).price, 0);
+  if (round2(myValue) > getItem(targetId).price) return 0;   // предметы дороже цели — апгрейд запрещён
+  return Math.min(100, (myValue / getItem(targetId).price) * 100);
+}
+
+function renderUpgrade(){
+  // убираем из выбора предметы, которых уже нет в инвентаре
+  selectedUids = new Set([...selectedUids].filter(u => state.inventory.some(e => e.uid === u)));
+
+  $('upMyHint').textContent = state.inventory.length ? '' : 'Инвентарь пуст';
+  $('upMy').innerHTML = state.inventory.map(e =>
+    `<div data-uid="${e.uid}" class="selectable-wrap">${itemCard(getItem(e.itemId)).replace('class="item"', 'class="item selectable' + (selectedUids.has(e.uid) ? ' selected' : '') + '"')}</div>`
+  ).join('');
+  // Стоимость выбранных предметов -> шанс на каждый скин-цель
+  const myValue = state.inventory.filter(e => selectedUids.has(e.uid)).reduce((sum, e) => sum + getItem(e.itemId).price, 0);
+  const chanceOf = item => Math.min(100, myValue / item.price * 100);
+  let list = ITEMS;
+  if (chanceFilter !== null)       // кнопка «75%» = показать скины, шанс на которые с вашими предметами около 75%
+    list = ITEMS.filter(i => myValue > 0 && i.price >= round2(myValue) && nearestLevel(chanceOf(i)) === chanceFilter).sort((a, b) => b.price - a.price);
+
+  $('chanceBar').innerHTML = ['all', ...CHANCE_LEVELS].map(l =>
+    `<button class="ghost ${(l === 'all' ? chanceFilter === null : l === chanceFilter) ? 'active' : ''}" data-chance="${l}">${l === 'all' ? 'Все' : l + '%'}</button>`).join('');
+  document.querySelectorAll('[data-chance]').forEach(b => b.onclick = () => {
+    chanceFilter = b.dataset.chance === 'all' ? null : +b.dataset.chance; renderUpgrade();
+  });
+
+  $('upTargets').innerHTML = list.length ? list.map(i => {
+      const locked = i.price < round2(myValue);          // цель дешевле ваших предметов -> заблокирована
+      const extra = !myValue ? '' : locked ? `<div class="chance">Дешевле ваших</div>`
+        : `<div class="chance">Шанс ${chanceOf(i).toFixed(1).replace(/\.0$/, '')}%</div>`;
+      return `<div data-target="${i.id}">${itemCard(i, extra).replace('class="item"', 'class="item selectable' + (locked ? ' locked' : '') + (targetId === i.id ? ' selected' : '') + '"')}</div>`;
+    }).join('')
+    : `<p class="empty">${myValue ? 'Нет скинов с таким шансом' : 'Выберите свои предметы слева'}</p>`;
+
+  document.querySelectorAll('[data-uid]').forEach(el => el.onclick = () => {
+    if (isUpgrading) return;
+    selectedUids.has(el.dataset.uid) ? selectedUids.delete(el.dataset.uid) : selectedUids.add(el.dataset.uid);
+    renderUpgrade();
+  });
+  document.querySelectorAll('[data-target]').forEach(el => el.onclick = () => {
+    if (isUpgrading) return;
+    if (getItem(el.dataset.target).price < round2(myValue)){ toast('Ваши предметы дороже этой цели — апгрейд невозможен'); return; }
+    targetId = el.dataset.target; renderUpgrade();
+  });
+  updateWheel();
+}
+
+/* Подписи шкалы вокруг колеса: 100% — сверху по центру, 0% — снизу, 50% — по бокам, 25% и 75% между ними.
+   Шкала зеркальная: значение растёт от нижней точки вверх по обеим сторонам. Углы считаем от низа:
+   a = % * 1.8°, поэтому 100% = 180° (верх). Позиция точки на окружности: x = C ± R*sin(a), y = C + R*cos(a). */
+function renderWheelScale(){
+  const C = 120, R = 134;                                   // центр колеса и радиус подписей (px)
+  const marks = [[100,0],[75,-1],[75,1],[50,-1],[50,1],[25,-1],[25,1],[0,0]];   // [значение, сторона: -1 слева, 1 справа]
+  $('wheel').insertAdjacentHTML('beforeend', marks.map(([v, side]) => {
+    const a = v * 1.8 * Math.PI / 180;
+    return `<span class="tick ${v === 0 || v === 100 ? 'big' : ''}" style="left:${C + side * R * Math.sin(a)}px;top:${C + R * Math.cos(a)}px">${v}%</span>`;
+  }).join(''));
+}
+
+/* Зелёная дуга растёт от нижней точки (0%) в обе стороны до верха (100%) */
+function updateWheel(){
+  const chance = calculateUpgradeChance();
+  const half = chance * 1.8;   // половина зелёной дуги в градусах (conic-gradient считает от верха по часовой)
+  $('wheel').style.background = `conic-gradient(#2a1b45 0 ${180 - half}deg, #4ade80 ${180 - half}deg ${180 + half}deg, #2a1b45 ${180 + half}deg 360deg)`;
+  $('wheelText').textContent = `Шанс: ${chance.toFixed(1).replace(/\.0$/, '')}%`;
+  $('upgradeBtn').disabled = !chance || isUpgrading;
+  const blocked = targetId && selectedUids.size && chance === 0;   // выбрано всё, но шанс 0 = предметы дороже цели
+  $('upInfo').textContent = chance ? `Цель: ${getItem(targetId).name}` : blocked ? '⛔ Ваши предметы дороже цели — апгрейд невозможен' : 'Выберите предметы и цель';
+}
+
+/* ===== 3D-сова (Three.js) =====
+   Собрана из простых фигур: сфера (тело, голова, глаза), конус (клюв, уши).
+   Голова — отдельная группа (head), поэтому её можно вращать независимо от тела.
+   Если Three.js не загрузился (нет интернета) — остаётся плоская SVG-сова. */
+let owl3dReady = false;
+let owlSpinStart = null;   // момент старта поворота головы (null = не крутится)
+
+function initOwl3D(){
+  if (!window.THREE) return;
+  const W = 150, H = 140, box = $('owl');
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({alpha:true, antialias:true}); } catch(e){ return; }
+  renderer.setSize(W, H); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.setClearColor(0x000000, 0);
+  box.innerHTML = ''; box.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 50);
+  camera.position.set(0, 0.9, 6.2); camera.lookAt(0, 0.3, 0);
+  scene.add(new THREE.AmbientLight(0xb08cff, 0.7));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.position.set(3, 5, 5); scene.add(sun);
+  const glow = new THREE.PointLight(0xa855f7, 1.2); glow.position.set(-4, 1, 3); scene.add(glow);
+
+  const SPHERE = new THREE.SphereGeometry(1, 32, 24), CONE = new THREE.ConeGeometry(1, 1, 16);
+  // mk(форма, цвет, x, y, z, масштаб x, y, z) — маленький помощник для создания деталей
+  const mk = (geo, color, x, y, z, sx = 1, sy = 1, sz = 1) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({color, shininess:40}));
+    m.position.set(x, y, z); m.scale.set(sx, sy, sz); return m;
+  };
+
+  const owl = new THREE.Group(); scene.add(owl);
+  owl.add(mk(SPHERE, 0x5b2a9e, 0, -0.35, 0, 1.05, 1.2, 0.95));       // тело
+  owl.add(mk(SPHERE, 0xa78bfa, 0, -0.4, 0.45, 0.7, 0.9, 0.55));      // светлое брюшко
+  for (const side of [-1, 1]){
+    const wing = mk(SPHERE, 0x4c1d95, side * 1.0, -0.35, 0.05, 0.28, 0.85, 0.55); wing.rotation.z = -side * 0.15; owl.add(wing);
+    owl.add(mk(SPHERE, 0xf59e0b, side * 0.35, -1.5, 0.5, 0.28, 0.12, 0.4));   // лапки
+  }
+
+  const head = new THREE.Group(); head.position.y = 1.0; owl.add(head);
+  head.add(mk(SPHERE, 0x7c3aed, 0, 0, 0, 0.95, 0.85, 0.9));          // голова
+  head.add(mk(SPHERE, 0x6d28d9, 0, -0.05, -0.6, 0.6, 0.5, 0.3));     // затылок
+  for (const side of [-1, 1]){
+    const ear = mk(CONE, 0x5b2a9e, side * 0.6, 0.8, 0, 0.22, 0.55, 0.22); ear.rotation.z = -side * 0.4; head.add(ear);
+    head.add(mk(SPHERE, 0xf3e8ff, side * 0.36, 0.08, 0.7, 0.3, 0.3, 0.18));    // белок
+    head.add(mk(SPHERE, 0xfbbf24, side * 0.36, 0.08, 0.84, 0.18, 0.18, 0.1));  // радужка
+    head.add(mk(SPHERE, 0x111111, side * 0.36, 0.08, 0.92, 0.09, 0.09, 0.06)); // зрачок
+  }
+  const beak = mk(CONE, 0xf59e0b, 0, -0.2, 0.92, 0.14, 0.28, 0.14); beak.rotation.x = Math.PI / 2; head.add(beak);
+
+  // Цикл отрисовки: сова покачивается, а при owlSpinStart голова делает полный оборот (0 → 2π)
+  // с плавным стартом и торможением (формула 0.5 - 0.5*cos даёт «ease-in-out»).
+  (function loop(now){
+    if ($('view-upgrade').classList.contains('active')){
+      const t = now / 1000;
+      owl.position.y = Math.sin(t * 2) * 0.06; owl.rotation.y = Math.sin(t * 0.8) * 0.15;
+      if (owlSpinStart !== null){
+        const k = (now - owlSpinStart) / 3600;
+        if (k >= 1){ owlSpinStart = null; head.rotation.y = 0; }
+        else head.rotation.y = (0.5 - 0.5 * Math.cos(Math.PI * k)) * Math.PI * 2;
+      } else head.rotation.y = Math.sin(t * 1.3) * 0.3;     // в покое сова слегка «оглядывается»
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(loop);
+  })(performance.now());
+  owl3dReady = true;
+}
+
+function owlSpin(){
+  if (owl3dReady) { owlSpinStart = performance.now(); return; }
+  const h = $('owlHead'); h.classList.remove('turn'); void h.offsetWidth; h.classList.add('turn');   // запасной вариант (SVG)
+}
+
+/* Салют при успехе. Специально сделан скромным: 3 небольших залпа по 18 частиц,
+   мелкие точки, приглушённые цвета и прозрачность (globalAlpha) — чтобы не слепило.
+   Каждая частица летит из центра залпа, замедляется (vx *= 0.98), падает вниз (vy += 0.03) и гаснет (life). */
+function launchFireworks(){
+  const cv = $('fx'), wrap = $('wheelWrap');
+  cv.width = wrap.clientWidth; cv.height = wrap.clientHeight;
+  const ctx = cv.getContext('2d');
+  const colors = ['#c084fc', '#f0abfc', '#fcd34d', '#93c5fd'];
+  const parts = [];
+  function burst(){
+    const x = cv.width * (0.2 + Math.random() * 0.6), y = cv.height * (0.12 + Math.random() * 0.4);
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    for (let i = 0; i < 18; i++){
+      const a = Math.PI * 2 * i / 18, v = 1 + Math.random() * 1.2;
+      parts.push({x, y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, life:1, color});
+    }
+  }
+  burst(); setTimeout(burst, 350); setTimeout(burst, 700);
+  const start = performance.now();
+  (function frame(){
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (let i = parts.length - 1; i >= 0; i--){
+      const q = parts[i];
+      q.x += q.vx; q.y += q.vy; q.vy += 0.03; q.vx *= 0.98; q.life -= 0.012;
+      if (q.life <= 0){ parts.splice(i, 1); continue; }
+      ctx.globalAlpha = q.life * 0.6; ctx.fillStyle = q.color;
+      ctx.beginPath(); ctx.arc(q.x, q.y, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+    if (performance.now() - start < 1300 || parts.length) requestAnimationFrame(frame);
+    else ctx.clearRect(0, 0, cv.width, cv.height);
+  })();
+}
+
+/* Выполняем апгрейд.
+   Бросаем число roll от 0 до 100. Если roll < шанса — успех (стрелка попадает в зелёный сектор).
+   Шкала зеркальная (0% внизу, 100% вверху), поэтому угол стрелки = 180° ± roll * 1.8° — анимация честно совпадает с результатом.
+   К углу добавляем 5 полных оборотов, чтобы стрелка красиво «прокрутилась». */
+async function upgrade(){
+  const chance = calculateUpgradeChance();
+  if (isUpgrading || !chance) return;
+  isUpgrading = true; $('upgradeBtn').disabled = true;
+  owlSpin();                                        // сова крутит головой
+
+  const roll = Math.random() * 100;
+  const success = roll < chance;
+  const pointer = $('pointer');
+  pointer.style.transition = 'none'; pointer.style.transform = 'rotate(0deg)';
+  void pointer.offsetWidth;
+  pointer.style.transition = 'transform 4s cubic-bezier(0.15, 0.7, 0.2, 1)';
+  const side = Math.random() < 0.5 ? -1 : 1;             // стрелка садится на левую или правую половину шкалы
+  pointer.style.transform = `rotate(${5 * 360 + 180 + side * roll * 1.8}deg)`;
+  await new Promise(r => setTimeout(r, 4200));
+
+  // Старые предметы сгорают в любом случае
+  state.inventory = state.inventory.filter(e => !selectedUids.has(e.uid));
+  state.stats.upgrades++;                           // счётчик апгрейдов (все попытки)
+  if (success){ state.stats.wins++; recordBest(targetId); launchFireworks(); addToInventory(targetId); toast('🎉 Успех! Получен ' + getItem(targetId).name); }
+  else toast('💥 Неудача — предметы сгорели');
+
+  selectedUids.clear(); saveState();
+  isUpgrading = false; renderUpgrade();
+}
+$('upgradeBtn').onclick = upgrade;
+
+/* =====================================================================
+   8. СТАРТ
+   ===================================================================== */
+renderBalance();
+renderWheelScale();
+initOwl3D();
+showView('shop');
+</script>
+</body>
+</html>
